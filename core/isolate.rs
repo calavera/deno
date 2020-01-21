@@ -582,9 +582,11 @@ impl Isolate {
         let deno_val = v8::Object::new(s);
         if let Some(local_fun) = deno_val.get(s, context, fun.into()) {
           if local_fun.is_function() {
-            // TODO: Get the function object and call it with the local context.
-            // local_fun
-            //   .call(s, context, context.global(s).into(), &[])
+            unsafe {
+              let mut fun: v8::Local<v8::Function> = v8::Local::cast(local_fun);
+              let recv = context.global(s).into();
+              fun.call(s, context, recv, 0, Vec::new());
+            }
           }
         }
       }
