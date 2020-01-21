@@ -546,6 +546,53 @@ impl Isolate {
     self.check_last_exception()
   }
 
+  /// Invokes a specific function after loading a JS source file.
+  ///
+  /// ErrBox can be downcast to a type that exposes additional information about
+  /// the V8 exception. By default this type is CoreJSError, however it may be a
+  /// different type if Isolate::set_js_error_create() has been used.
+  pub fn call(
+    &mut self,
+    js_filename: &str,
+    js_source: &str,
+    js_fun: &str,
+  ) -> Result<(), ErrBox> {
+    self.shared_init();
+    let isolate = self.v8_isolate.as_ref().unwrap();
+    let mut locker = v8::Locker::new(isolate);
+    assert!(!self.global_context.is_empty());
+    let mut hs = v8::HandleScope::new(&mut locker);
+    let s = hs.enter();
+    let mut context = self.global_context.get(s).unwrap();
+    context.enter();
+    let source = v8::String::new(s, js_source).unwrap();
+    let name = v8::String::new(s, js_filename).unwrap();
+    let mut try_catch = v8::TryCatch::new(s);
+    let tc = try_catch.enter();
+    let origin = bindings::script_origin(s, name);
+    let mut script =
+      v8::Script::compile(s, context, source, Some(&origin)).unwrap();
+    let result = script.run(s, context);
+    if result.is_none() {
+      assert!(tc.has_caught());
+      let exception = tc.exception().unwrap();
+      self.handle_exception(s, context, exception);
+    } else {
+      if let Some(fun) = v8::String::new(s, js_fun) {
+        let deno_val = v8::Object::new(s);
+        if let Some(local_fun) = deno_val.get(s, context, fun.into()) {
+          if local_fun.is_function() {
+            // TODO: Get the function object and call it with the local context.
+            // local_fun
+            //   .call(s, context, context.global(s).into(), &[])
+          }
+        }
+      }
+    }
+    context.exit();
+    self.check_last_exception()
+  }
+
   pub(crate) fn check_last_exception(&mut self) -> Result<(), ErrBox> {
     if self.last_exception.is_none() {
       return Ok(());
